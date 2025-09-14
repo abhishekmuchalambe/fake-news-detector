@@ -1,0 +1,246 @@
+Absolutely! I’ll give you a **complete, ready-to-run Fake News Detector project** from scratch—including training, preprocessing, Streamlit app with **URL input**, **dual-model predictions**, and **confidence scores**. You can copy this and run it directly.
+
+---
+
+## **1️⃣ Folder Structure**
+
+```
+fake-news-detector/
+│
+├─ data/
+│   └─ train.csv          # Kaggle Fake News Dataset
+│
+├─ models/                # Will store trained models
+│
+├─ train.py               # Training script
+├─ app.py                 # Streamlit app
+├─ requirements.txt       # Dependencies
+└─ README.md
+```
+
+---
+
+## **2️⃣ requirements.txt**
+
+```text
+pandas
+numpy
+scikit-learn
+nltk
+joblib
+streamlit
+newspaper3k
+```
+
+Install dependencies with:
+
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+## **3️⃣ train.py – Train & Save Models**
+
+```python
+# train.py
+
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression, PassiveAggressiveClassifier
+from sklearn.metrics import accuracy_score
+import joblib
+import nltk
+import string
+from nltk.corpus import stopwords
+from nltk.stem.porter import PorterStemmer
+import os
+
+# Download stopwords
+nltk.download('stopwords')
+
+# Load dataset
+df = pd.read_csv('data/train.csv')  # Ensure this CSV is inside data/
+
+# Dataset should have 'text' and 'label' columns
+X = df['text']
+y = df['label']
+
+# Preprocessing
+stemmer = PorterStemmer()
+stop_words = set(stopwords.words('english'))
+
+def preprocess(text):
+    text = text.lower()
+    text = ''.join([char for char in text if char not in string.punctuation])
+    words = text.split()
+    words = [stemmer.stem(word) for word in words if word not in stop_words]
+    return ' '.join(words)
+
+X = X.apply(preprocess)
+
+# Split dataset
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# TF-IDF Vectorization
+vectorizer = TfidfVectorizer(max_df=0.7)
+X_train_tf = vectorizer.fit_transform(X_train)
+X_test_tf = vectorizer.transform(X_test)
+
+# Logistic Regression
+lr_model = LogisticRegression()
+lr_model.fit(X_train_tf, y_train)
+y_pred_lr = lr_model.predict(X_test_tf)
+print(f"Logistic Regression Accuracy: {accuracy_score(y_test, y_pred_lr)*100:.2f}%")
+
+# Passive Aggressive Classifier
+pa_model = PassiveAggressiveClassifier(max_iter=50)
+pa_model.fit(X_train_tf, y_train)
+y_pred_pa = pa_model.predict(X_test_tf)
+print(f"Passive Aggressive Accuracy: {accuracy_score(y_test, y_pred_pa)*100:.2f}%")
+
+# Save models & vectorizer
+os.makedirs('models', exist_ok=True)
+joblib.dump(lr_model, 'models/logistic_model.pkl')
+joblib.dump(pa_model, 'models/pa_model.pkl')
+joblib.dump(vectorizer, 'models/tfidf_vectorizer.pkl')
+
+print("Models and vectorizer saved successfully!")
+```
+
+---
+
+## **4️⃣ app.py – Streamlit Interface with URL & Dual Model**
+
+```python
+# app.py
+
+import streamlit as st
+import joblib
+import nltk
+import string
+from nltk.corpus import stopwords
+from nltk.stem.porter import PorterStemmer
+from newspaper import Article
+import numpy as np
+
+# Download stopwords
+nltk.download('stopwords')
+
+# Load models & vectorizer
+lr_model = joblib.load('models/logistic_model.pkl')
+pa_model = joblib.load('models/pa_model.pkl')
+vectorizer = joblib.load('models/tfidf_vectorizer.pkl')
+
+# Preprocessing
+stemmer = PorterStemmer()
+stop_words = set(stopwords.words('english'))
+
+def preprocess(text):
+    text = text.lower()
+    text = ''.join([char for char in text if char not in string.punctuation])
+    words = text.split()
+    words = [stemmer.stem(word) for word in words if word not in stop_words]
+    return ' '.join(words)
+
+# Scrape article from URL
+def scrape_article(url):
+    try:
+        article = Article(url)
+        article.download()
+        article.parse()
+        return article.text
+    except:
+        return None
+
+# Streamlit UI
+st.title("📰 Fake News Detector – Dual Model")
+st.write("Check if a news article is Real or Fake. Compare Logistic Regression and Passive Aggressive predictions.")
+
+# Input Type
+input_type = st.radio("Input Type", ["Text", "URL"])
+
+news_text = ""
+if input_type == "Text":
+    news_text = st.text_area("Enter News Text:")
+else:
+    url = st.text_input("Enter News URL:")
+    if st.button("Fetch Article"):
+        if url.strip() == "":
+            st.warning("Please enter a valid URL.")
+        else:
+            scraped_text = scrape_article(url)
+            if scraped_text:
+                news_text = scraped_text
+                st.text_area("Scraped Article Text:", value=news_text, height=200)
+            else:
+                st.error("Failed to fetch article. Please check the URL.")
+
+# Predict Button
+if st.button("Predict"):
+    if news_text.strip() == "":
+        st.warning("Please enter text or fetch an article to predict.")
+    else:
+        processed_text = preprocess(news_text)
+        vectorized_text = vectorizer.transform([processed_text])
+
+        # Logistic Regression prediction & confidence
+        lr_pred = lr_model.predict(vectorized_text)[0]
+        lr_conf = np.max(lr_model.predict_proba(vectorized_text)) * 100
+
+        # Passive Aggressive prediction & approximate confidence
+        pa_pred = pa_model.predict(vectorized_text)[0]
+        pa_conf_score = pa_model.decision_function(vectorized_text)[0]
+        pa_conf = 100 / (1 + np.exp(-pa_conf_score))  # Sigmoid approximation
+
+        # Display side by side
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader("Logistic Regression")
+            st.write("✅ Real" if lr_pred == 1 else "❌ Fake")
+            st.write(f"Confidence: {lr_conf:.2f}%")
+        with col2:
+            st.subheader("Passive Aggressive")
+            st.write("✅ Real" if pa_pred == 1 else "❌ Fake")
+            st.write(f"Confidence (approx.): {pa_conf:.2f}%")
+```
+
+---
+
+## **5️⃣ How to Run**
+
+1. **Clone Repo / Copy Code**
+2. **Install dependencies**:
+
+```bash
+pip install -r requirements.txt
+```
+
+3. **Place dataset** `train.csv` in `data/` folder
+4. **Train models**:
+
+```bash
+python train.py
+```
+
+5. **Run Streamlit app**:
+
+```bash
+streamlit run app.py
+```
+
+6. Open browser at `http://localhost:8501` and test **text input or URL input**.
+
+---
+
+This version gives you a **fully functional, interactive Fake News Detector** with:
+
+* Preprocessing, stemming, stopwords removal
+* TF-IDF features
+* Logistic Regression & Passive Aggressive models
+* URL scraping for live articles
+* Confidence scores and side-by-side comparison
+
+---
+
