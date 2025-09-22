@@ -1,104 +1,185 @@
-## train.py
+# Fake News Detector in Python
+# Beginner-Friendly Code (~300 lines)
+# -----------------------------------
+# This program will:
+# 1. Load a dataset of news articles
+# 2. Preprocess text (cleaning, stopwords, stemming)
+# 3. Convert text to numbers (TF-IDF)
+# 4. Train a classifier to detect fake news
+# 5. Test the classifier and show accuracy
+# 6. Save and load the model for reuse
+
+# Import libraries
 import pandas as pd
 import numpy as np
+import string
+import joblib
+
+# NLP libraries
 import nltk
+from nltk.corpus import stopwords
+from nltk.stem.porter import PorterStemmer
+
+# Machine learning tools
 from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.linear_model import PassiveAggressiveClassifier, LogisticRegression
-from sklearn.metrics import accuracy_score
-import joblib
-import string
-from nltk.corpus import stopwords
-from nltk.stem.porter import PorterStemmer
+from sklearn.linear_model import PassiveAggressiveClassifier
+from sklearn.metrics import accuracy_score, confusion_matrix
 
+# Download stopwords (only first time)
 nltk.download('stopwords')
 
-# Load dataset
-df = pd.read_csv("data/train.csv")
+# ----------------------------------------------------
+# STEP 1: Load Dataset
+# ----------------------------------------------------
+# For demo purposes, we assume you have a CSV file: "news.csv"
+# The CSV should have at least two columns: ["text", "label"]
+# label = "FAKE" or "REAL"
 
-# Fill missing values
-df = df.fillna('')
+print("\nLoading dataset...")
 
-# Preprocessing function
-def preprocess(text):
-    text = text.lower()  # Lowercase
-    text = text.translate(str.maketrans('', '', string.punctuation))  # Remove punctuation
+try:
+    df = pd.read_csv("news.csv")
+    print("Dataset loaded successfully!")
+except FileNotFoundError:
+    print("Error: news.csv not found! Please place your dataset in the same folder.")
+    # To make this code runnable, let's create a small sample dataset
+    sample_data = {
+        "text": [
+            "Donald Trump says the economy is booming.",
+            "Scientists confirm COVID-19 is a hoax.",
+            "NASA discovers water on Mars.",
+            "Bill Gates admits creating coronavirus in lab."
+        ],
+        "label": ["REAL", "FAKE", "REAL", "FAKE"]
+    }
+    df = pd.DataFrame(sample_data)
+
+# Show first 5 rows
+print("\nSample of dataset:")
+print(df.head())
+
+# ----------------------------------------------------
+# STEP 2: Text Preprocessing
+# ----------------------------------------------------
+
+# Create a stemmer object
+stemmer = PorterStemmer()
+
+# Get English stopwords
+stop_words = set(stopwords.words('english'))
+
+# Function to clean text
+def clean_text(text):
+    # Convert to lowercase
+    text = text.lower()
+    # Remove punctuation
+    text = text.translate(str.maketrans('', '', string.punctuation))
+    # Tokenize (split into words)
     words = text.split()
-    words = [word for word in words if word not in stopwords.words('english')]  # Remove stopwords
-    stemmer = PorterStemmer()
-    words = [stemmer.stem(word) for word in words]  # Stemming
-    return ' '.join(words)
+    # Remove stopwords and apply stemming
+    words = [stemmer.stem(word) for word in words if word not in stop_words]
+    # Join back into sentence
+    return " ".join(words)
 
-# Apply preprocessing
-df['text'] = df['title'] + ' ' + df['text']
-df['text'] = df['text'].apply(preprocess)
+print("\nCleaning text data...")
+df['clean_text'] = df['text'].apply(clean_text)
 
-# Features and Labels
-X = df['text']
+print("Cleaned sample:")
+print(df[['text', 'clean_text']].head())
+
+# ----------------------------------------------------
+# STEP 3: Convert text to numbers (TF-IDF)
+# ----------------------------------------------------
+
+print("\nConverting text to numeric features...")
+
+vectorizer = TfidfVectorizer(max_features=5000)
+X = vectorizer.fit_transform(df['clean_text']).toarray()
 y = df['label']
 
-# Train-test split
+print("Feature matrix shape:", X.shape)
+
+# ----------------------------------------------------
+# STEP 4: Train-Test Split
+# ----------------------------------------------------
+
+print("\nSplitting dataset into train and test sets...")
+
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# TF-IDF Vectorization
-vectorizer = TfidfVectorizer(max_features=5000)
-X_train_tfidf = vectorizer.fit_transform(X_train)
-X_test_tfidf = vectorizer.transform(X_test)
+print("Training size:", X_train.shape)
+print("Testing size:", X_test.shape)
 
-# Model training
-model = PassiveAggressiveClassifier(max_iter=50)
-model.fit(X_train_tfidf, y_train)
+# ----------------------------------------------------
+# STEP 5: Train Classifier
+# ----------------------------------------------------
+
+print("\nTraining the PassiveAggressiveClassifier...")
+
+model = PassiveAggressiveClassifier(max_iter=1000)
+model.fit(X_train, y_train)
+
+print("Model training complete!")
+
+# ----------------------------------------------------
+# STEP 6: Evaluate Model
+# ----------------------------------------------------
+
+print("\nEvaluating model...")
+
+# Predictions
+y_pred = model.predict(X_test)
 
 # Accuracy
-y_pred = model.predict(X_test_tfidf)
-score = accuracy_score(y_test, y_pred)
-print(f"Model Accuracy: {score*100:.2f}%")
+acc = accuracy_score(y_test, y_pred)
+print("Accuracy:", acc)
 
-# Save model and vectorizer
-joblib.dump(model, "models/model.pkl")
-joblib.dump(vectorizer, "models/vectorizer.pkl")
+# Confusion Matrix
+cm = confusion_matrix(y_test, y_pred, labels=["FAKE", "REAL"])
+print("\nConfusion Matrix:")
+print(cm)
 
-##app.py
-import streamlit as st
-import joblib
-import string
-import nltk
-from nltk.corpus import stopwords
-from nltk.stem.porter import PorterStemmer
+# ----------------------------------------------------
+# STEP 7: Save and Load Model
+# ----------------------------------------------------
 
-nltk.download('stopwords')
+print("\nSaving model and vectorizer...")
 
-# Load model and vectorizer
-model = joblib.load("models/model.pkl")
-vectorizer = joblib.load("models/vectorizer.pkl")
+joblib.dump(model, "fake_news_model.pkl")
+joblib.dump(vectorizer, "vectorizer.pkl")
 
-# Preprocessing function
-def preprocess(text):
-    text = text.lower()
-    text = text.translate(str.maketrans('', '', string.punctuation))
-    words = text.split()
-    words = [word for word in words if word not in stopwords.words('english')]
-    stemmer = PorterStemmer()
-    words = [stemmer.stem(word) for word in words]
-    return ' '.join(words)
+print("Model saved as fake_news_model.pkl")
+print("Vectorizer saved as vectorizer.pkl")
 
-# Streamlit app
-st.title("📰 Fake News Detector")
-st.write("Enter a news headline or article and get instant **Real** or **Fake** classification.")
+# Load back to test
+print("\nLoading saved model...")
 
-# Input
-user_input = st.text_area("Enter News Text Here")
+loaded_model = joblib.load("fake_news_model.pkl")
+loaded_vectorizer = joblib.load("vectorizer.pkl")
 
-# Prediction
-if st.button("Predict"):
-    if user_input.strip() == "":
-        st.warning("Please enter some text!")
-    else:
-        processed_text = preprocess(user_input)
-        vect_text = vectorizer.transform([processed_text])
-        prediction = model.predict(vect_text)[0]
-        if prediction == 0:
-            st.success("✅ This news is **Real**")
-        else:
-            st.error("❌ This news is **Fake**")
+# ----------------------------------------------------
+# STEP 8: Test with Custom Input
+# ----------------------------------------------------
 
+def predict_news(news):
+    # Clean the news
+    cleaned = clean_text(news)
+    # Transform with vectorizer
+    features = loaded_vectorizer.transform([cleaned]).toarray()
+    # Predict
+    prediction = loaded_model.predict(features)[0]
+    return prediction
+
+print("\nTesting custom news samples...")
+
+news_samples = [
+    "The government has announced new education reforms.",
+    "Aliens built the pyramids in Egypt last year."
+]
+
+for sample in news_samples:
+    result = predict_news(sample)
+    print(f"News: {sample}\nPrediction: {result}\n")
+
+print("\nFake News Detector is ready!")
